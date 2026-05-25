@@ -786,21 +786,24 @@ in description"
                          (not (file-exists-p file)))
                     (list (org-element-post-affiliated k)
                           "Non-existent file argument in INCLUDE keyword")
-                  (let* ((visiting (if file (find-buffer-visiting file)
-                                     (current-buffer)))
-                         (buffer (or visiting (find-file-noselect file)))
-                         (org-link-search-must-match-exact-headline t))
-                    (unwind-protect
-                        (with-current-buffer buffer
-                          (org-with-wide-buffer
-                           (when (and search
-                                      (not (ignore-errors
-                                           (org-link-search search nil t))))
-                             (list (org-element-post-affiliated k)
-                                   (format
-                                    "Invalid search part \"%s\" in INCLUDE keyword"
-                                    search)))))
-                      (unless visiting (kill-buffer buffer)))))))))))))
+                  (let ((org-link-search-must-match-exact-headline t)
+                        (visiting (if file (find-buffer-visiting file)
+                                    (current-buffer))))
+                    (cl-flet ((check-search ()
+                                (org-with-wide-buffer
+                                 (when (and search
+                                            (not (ignore-errors
+                                                 (org-link-search search nil t))))
+                                   (list (org-element-post-affiliated k)
+                                         (format
+                                          "Invalid search part \"%s\" in INCLUDE keyword"
+                                          search))))))
+                      (if visiting
+                          (with-current-buffer visiting (check-search))
+                        (with-temp-buffer
+                          (delay-mode-hooks (org-mode))
+                          (insert-file-contents file)
+                          (check-search))))))))))))))
 
 (defun org-lint-obsolete-include-markup (ast)
   (let ((regexp (format "\\`\\(?:\".+\"\\|\\S-+\\)[ \t]+%s"

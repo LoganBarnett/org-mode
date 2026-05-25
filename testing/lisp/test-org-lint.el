@@ -325,6 +325,48 @@ This is not a node property
        (org-test-with-temp-text (format "#+include: \"%s::*foo\"" file)
 	 (org-lint '(wrong-include-link-parameter)))))))
 
+(ert-deftest test-org-lint/wrong-include-link-parameter/no-visiting-buffer ()
+  "Validate INCLUDE search parts without side effects on non-visiting files.
+
+The checker must:
+- Detect a missing search target in a file that is not already
+  visiting (exercises the `with-temp-buffer' branch).
+- Accept a valid search target in the same conditions.
+- Not call `find-file-noselect' on the included file -- otherwise
+  every hook on `find-file-hook' (and through it, every mode hook
+  like `org-mode-hook' / `flyspell-mode-hook') runs on the included
+  file as a side effect of the lint pass.
+- Not leave a buffer behind after the check.
+
+`find-file-hook' is the signal of choice here rather than
+`org-mode-hook': `org-test-with-temp-text' rebinds the latter to
+nil for test isolation, so checking it would always pass regardless
+of what the checker does.  `find-file-hook' is left alone and only
+fires through the `find-file' / `find-file-noselect' family --
+`insert-file-contents' (used by the patched checker) does not
+trigger it."
+  (let* ((file (make-temp-file "org-lint-include-" nil ".org" "* foo\n"))
+	 (find-file-fired nil)
+	 (find-file-hook (cons (lambda () (setq find-file-fired t))
+			       (default-value 'find-file-hook))))
+    (unwind-protect
+	(progn
+	  ;; Sanity: file is on disk but not visiting.
+	  (should-not (find-buffer-visiting file))
+	  ;; Valid search -- no report, no side effects.
+	  (should-not
+	   (org-test-with-temp-text (format "#+include: \"%s::*foo\"" file)
+	     (org-lint '(wrong-include-link-parameter))))
+	  (should-not find-file-fired)
+	  (should-not (find-buffer-visiting file))
+	  ;; Invalid search -- report expected, still no side effects.
+	  (should
+	   (org-test-with-temp-text (format "#+include: \"%s::*nope\"" file)
+	     (org-lint '(wrong-include-link-parameter))))
+	  (should-not find-file-fired)
+	  (should-not (find-buffer-visiting file)))
+      (delete-file file))))
+
 (ert-deftest test-org-lint/obsolete-include-markup ()
   "Test `org-lint-obsolete-include-markup' checker."
   (should
